@@ -87,5 +87,5 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         for n in bn:
             if n.startswith('base/res/') and not n.endswith('/'):
                 zo.writestr('aab/' + n[5:], zb.read(n))
-        zo.writestr('pack.json', json.dumps({'version': 1, 'init': 'ads', 'package': PKG, 'gmsVersion': gms, 'iconId': icon_id, 'iconApk': ia[0], 'iconAab': ib[0]}, indent=1))
+        zo.writestr('pack.json', json.dumps({'version': 2, 'api': 2, 'init': 'ads', 'package': PKG, 'gmsVersion': gms, 'iconId': icon_id, 'iconApk': ia[0], 'iconAab': ib[0]}, indent=1))
 print('Paket:', out, os.path.getsize(out), 'bayt; dex:', dex)
