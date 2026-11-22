@@ -33,5 +33,18 @@ jobs:
           git config user.name "webaa"
           git config user.email "webaa@users.noreply.github.com"
           git add dist
-          git diff --cached --quiet || git commit -m "Reklam paketi ${GITHUB_RUN_NUMBER}"
-          git push
+          git diff --cached --quiet && exit 0
+          git commit -q -m "Reklam paketi ${GITHUB_RUN_NUMBER}"
+          # Ayni anda baska bir calisma push ettiyse: son duruma gec, dist'i yeniden uygula, tekrar dene
+          for i in 1 2 3 4 5; do
+            git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            git fetch -q origin "${GITHUB_REF_NAME}"
+            rm -rf /tmp/dist_new && cp -r dist /tmp/dist_new
+            git reset -q --hard FETCH_HEAD
+            rm -rf dist && cp -r /tmp/dist_new dist
+            git add dist
+            git diff --cached --quiet && exit 0
+            git commit -q -m "Reklam paketi ${GITHUB_RUN_NUMBER}"
+            sleep 2
+          done
+          exit 1
