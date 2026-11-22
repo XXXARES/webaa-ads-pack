@@ -51,14 +51,16 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         sys.exit('Simge dosyasi bulunamadi veya birden fazla: APK %s / AAB %s' % (ia, ib))
     print('Simge yolu: APK', ia[0], '| AAB', ib[0])
 
+    icon_id = None
     aapt2 = find_aapt2()
     if aapt2:
         out = subprocess.run([aapt2, 'dump', 'resources', apk], capture_output=True, text=True).stdout
         m = re.search(r'resource (0x7f[0-9a-fA-F]{6})\s+mipmap/ic_launcher', out)
-        if m and m.group(1).lower() != '0x7f010000':
+        if not m:
             print(out[:1500])
-            sys.exit('mipmap/ic_launcher kimligi ' + m.group(1) + ', 0x7f010000 olmali (public.xml uygulanmadi)')
-        print('aapt2 simge kimligi:', m.group(1) if m else 'bulunamadi (atlandi)')
+            sys.exit('aapt2 ciktisinda mipmap/ic_launcher bulunamadi')
+        icon_id = int(m.group(1), 16)
+        print('simge kimligi:', m.group(1))
         m2 = re.search(r'mipmap/ic_launcher\s*\n\s*\(\)\s*\(file\)\s+(\S+)', out)
         if m2 and m2.group(1) in an and m2.group(1) != ia[0]:
             print('aapt2 simge yolu farkli, o kullaniliyor:', m2.group(1), '(boyuttan bulunan:', ia[0] + ')')
@@ -66,7 +68,7 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         elif m2:
             print('aapt2 simge yolu dogrulandi:', m2.group(1))
     else:
-        print('Uyari: aapt2 bulunamadi, simge kimligi dogrulanmadi')
+        sys.exit('aapt2 bulunamadi, simge kimligi okunamadi')
 
     cands = glob.glob('app/build/intermediates/merged_manifest*/release/**/AndroidManifest.xml', recursive=True)
     for mf in cands[:1]:
@@ -85,5 +87,5 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         for n in bn:
             if n.startswith('base/res/') and not n.endswith('/'):
                 zo.writestr('aab/' + n[5:], zb.read(n))
-        zo.writestr('pack.json', json.dumps({'version': 1, 'init': 'ads', 'package': PKG, 'gmsVersion': gms, 'iconApk': ia[0], 'iconAab': ib[0]}, indent=1))
+        zo.writestr('pack.json', json.dumps({'version': 1, 'init': 'ads', 'package': PKG, 'gmsVersion': gms, 'iconId': icon_id, 'iconApk': ia[0], 'iconAab': ib[0]}, indent=1))
 print('Paket:', out, os.path.getsize(out), 'bayt; dex:', dex)
