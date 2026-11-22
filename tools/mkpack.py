@@ -1,5 +1,5 @@
 # Derlenen release APK ve AAB'den reklam paketini cikarir: dex + resources.arsc/res (APK) + resources.pb/res (AAB) + pack.json
-import glob, json, os, re, subprocess, sys, zipfile
+import glob, json, os, re, struct, subprocess, sys, zipfile
 
 PKG = 'com.webaa.adspack'
 apks = glob.glob('app/build/outputs/apk/release/*.apk')
@@ -22,7 +22,9 @@ if not gms:
     print('Uyari: google_play_services_version bulunamadi, 12451000 kullanildi')
 print('google_play_services_version:', gms)
 
-ICON = re.compile(r'^res/mipmap[^/]*/ic_launcher\.png$')
+def is_icon(data):
+    # yer tutucu simge: 48x48 PNG (APK'da dosya adi kisaltilabildigi icin boyuta gore bulunur)
+    return data[:8] == b'\x89PNG\r\n\x1a\n' and data[16:24] == struct.pack('>II', 48, 48)
 
 def find_aapt2():
     for r in (os.environ.get('ANDROID_HOME'), os.environ.get('ANDROID_SDK_ROOT'), '/usr/local/lib/android/sdk'):
@@ -43,11 +45,11 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         sys.exit('AAB icinde base/resources.pb yok')
     if not any(b'Lcom/webaa/adspack/AdsBoot;' in za.read(n) for n in dex):
         sys.exit('dex icinde AdsBoot sinifi yok (R8 silmis olabilir)')
-    ia = [n for n in an if ICON.match(n)]
-    ib = [n[5:] for n in bn if n.startswith('base/') and ICON.match(n[5:])]
-    if len(ia) != 1 or ia != ib:
-        sys.exit('ic_launcher.png yolu APK ve AAB icinde ayni degil: %s / %s' % (ia, ib))
-    print('Simge yolu:', ia[0])
+    ia = [n for n in an if n.startswith('res/') and n.endswith('.png') and is_icon(za.read(n))]
+    ib = [n[5:] for n in bn if n.startswith('base/res/') and n.endswith('.png') and is_icon(zb.read(n))]
+    if len(ia) != 1 or len(ib) != 1:
+        sys.exit('Simge dosyasi bulunamadi veya birden fazla: APK %s / AAB %s' % (ia, ib))
+    print('Simge yolu: APK', ia[0], '| AAB', ib[0])
 
     aapt2 = find_aapt2()
     if aapt2:
