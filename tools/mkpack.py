@@ -45,8 +45,8 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         sys.exit('AAB icinde base/resources.pb yok')
     if not any(b'Lcom/webaa/adspack/AdsBoot;' in za.read(n) for n in dex):
         sys.exit('dex icinde AdsBoot sinifi yok (R8 silmis olabilir)')
-    ia = [n for n in an if n.startswith('res/') and n.endswith('.png') and is_icon(za.read(n))]
-    ib = [n[5:] for n in bn if n.startswith('base/res/') and n.endswith('.png') and is_icon(zb.read(n))]
+    ia = [n for n in an if n.startswith('res/') and n.endswith('.png') and not n.endswith('.9.png') and is_icon(za.read(n))]
+    ib = [n[5:] for n in bn if n.startswith('base/res/') and n.endswith('.png') and not n.endswith('.9.png') and is_icon(zb.read(n))]
     if len(ia) != 1 or len(ib) != 1:
         sys.exit('Simge dosyasi bulunamadi veya birden fazla: APK %s / AAB %s' % (ia, ib))
     print('Simge yolu: APK', ia[0], '| AAB', ib[0])
@@ -59,6 +59,12 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
             print(out[:1500])
             sys.exit('mipmap/ic_launcher kimligi ' + m.group(1) + ', 0x7f010000 olmali (public.xml uygulanmadi)')
         print('aapt2 simge kimligi:', m.group(1) if m else 'bulunamadi (atlandi)')
+        m2 = re.search(r'mipmap/ic_launcher\s*\n\s*\(\)\s*\(file\)\s+(\S+)', out)
+        if m2 and m2.group(1) in an and m2.group(1) != ia[0]:
+            print('aapt2 simge yolu farkli, o kullaniliyor:', m2.group(1), '(boyuttan bulunan:', ia[0] + ')')
+            ia = [m2.group(1)]
+        elif m2:
+            print('aapt2 simge yolu dogrulandi:', m2.group(1))
     else:
         print('Uyari: aapt2 bulunamadi, simge kimligi dogrulanmadi')
 
