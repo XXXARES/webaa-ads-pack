@@ -117,6 +117,15 @@ public class AdsBoot extends ContentProvider implements Application.ActivityLife
             if (!readConfig(c)) return true;
             ui = new Handler(Looper.getMainLooper());
             ((Application) app).registerActivityLifecycleCallbacks(this);
+            BillingBoot.onNoAds = new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (banner != null) banner.setVisibility(View.GONE);
+                    } catch (Throwable ignored) {
+                    }
+                }
+            };
             if (!ump) startAds();
         } catch (Throwable ignored) {
             // reklam baslamasa da uygulama acilir
@@ -275,11 +284,20 @@ public class AdsBoot extends ContentProvider implements Application.ActivityLife
     private void onReady() {
         ready = true;
         try {
-            if (banner != null) banner.loadAd(new AdRequest.Builder().build());
+            if (banner != null && !noAds()) banner.loadAd(new AdRequest.Builder().build());
             loadInter();
             loadRew();
             loadOpen();
         } catch (Throwable ignored) {
+        }
+    }
+
+    /** "Reklamlari kaldir" urunu alinmissa banner, gecis ve acilis reklami gosterilmez (odullu kalir). */
+    private boolean noAds() {
+        try {
+            return BillingBoot.noAds;
+        } catch (Throwable t) {
+            return false;
         }
     }
 
@@ -320,7 +338,7 @@ public class AdsBoot extends ContentProvider implements Application.ActivityLife
         try {
             Activity a = curAct();
             final InterstitialAd ad = inter;
-            if (ad == null || a == null || !resumed || adFull) {
+            if (ad == null || a == null || !resumed || adFull || noAds()) {
                 loadInter();
                 if (done != null) done.on(false);
                 return false;
@@ -481,7 +499,7 @@ public class AdsBoot extends ContentProvider implements Application.ActivityLife
         try {
             Activity a = curAct();
             final AppOpenAd ad = openAd;
-            if (ad == null || a == null || !resumed || adFull) {
+            if (ad == null || a == null || !resumed || adFull || noAds()) {
                 loadOpen();
                 return;
             }
@@ -602,7 +620,7 @@ public class AdsBoot extends ContentProvider implements Application.ActivityLife
     /** WebView'i dikey bir kapsayiciya alir, altina (ya da ustune) banner ekler. */
     private void wrap(Activity a) {
         try {
-            if (bannerId.length() == 0) return;
+            if (bannerId.length() == 0 || noAds()) return;
             ViewGroup content = (ViewGroup) a.findViewById(android.R.id.content);
             if (content == null || content.getChildCount() != 1) return;
             View first = content.getChildAt(0);

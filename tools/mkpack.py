@@ -45,6 +45,10 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         sys.exit('AAB icinde base/resources.pb yok')
     if not any(b'Lcom/webaa/adspack/AdsBoot;' in za.read(n) for n in dex):
         sys.exit('dex icinde AdsBoot sinifi yok (R8 silmis olabilir)')
+    if not any(b'Lcom/webaa/adspack/BillingBoot;' in za.read(n) for n in dex):
+        sys.exit('dex icinde BillingBoot sinifi yok (R8 silmis olabilir)')
+    if not any(b'Lcom/android/billingclient/api/BillingClient;' in za.read(n) for n in dex):
+        sys.exit('dex icinde Google Play Billing kutuphanesi yok')
     ia = [n for n in an if n.startswith('res/') and n.endswith('.png') and not n.endswith('.9.png') and is_icon(za.read(n))]
     ib = [n[5:] for n in bn if n.startswith('base/res/') and n.endswith('.png') and not n.endswith('.9.png') and is_icon(zb.read(n))]
     if len(ia) != 1 or len(ib) != 1:
@@ -71,9 +75,21 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         sys.exit('aapt2 bulunamadi, simge kimligi okunamadi')
 
     cands = glob.glob('app/build/intermediates/merged_manifest*/release/**/AndroidManifest.xml', recursive=True)
+    bacts = []
     for mf in cands[:1]:
-        names = re.findall(r'<(?:activity|service|provider|receiver)[^>]*android:name="([^"]+)"', open(mf, encoding='utf-8').read())
+        txt = open(mf, encoding='utf-8').read()
+        names = re.findall(r'<(?:activity|service|provider|receiver)[^>]*android:name="([^"]+)"', txt)
         print('Birlesik manifest bilesenleri:', names)
+        for tag in re.findall(r'<activity\b[^>]*>', txt):
+            m = re.search(r'android:name="(com\.android\.billingclient\.[^"]+)"', tag)
+            if not m:
+                continue
+            cc = re.search(r'android:configChanges="([^"]*)"', tag)
+            th = re.search(r'android:theme="([^"]*)"', tag)
+            bacts.append({'name': m.group(1), 'configChanges': cc.group(1) if cc else '', 'theme': th.group(1) if th else ''})
+    print('Billing etkinlikleri:', bacts)
+    if not bacts:
+        print('Uyari: birlesik manifestte billing etkinligi bulunamadi, Webaa varsayilan ProxyBillingActivity satirini kullanir')
     os.makedirs('dist', exist_ok=True)
     out = 'dist/ads-pack.zip'
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as zo:
@@ -87,5 +103,5 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         for n in bn:
             if n.startswith('base/res/') and not n.endswith('/'):
                 zo.writestr('aab/' + n[5:], zb.read(n))
-        zo.writestr('pack.json', json.dumps({'version': 2, 'api': 2, 'init': 'ads', 'package': PKG, 'gmsVersion': gms, 'iconId': icon_id, 'iconApk': ia[0], 'iconAab': ib[0]}, indent=1))
+        zo.writestr('pack.json', json.dumps({'version': 3, 'api': 3, 'init': 'ads', 'billing': True, 'package': PKG, 'gmsVersion': gms, 'iconId': icon_id, 'iconApk': ia[0], 'iconAab': ib[0], 'billingActs': bacts}, indent=1))
 print('Paket:', out, os.path.getsize(out), 'bayt; dex:', dex)

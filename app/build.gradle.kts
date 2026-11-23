@@ -34,4 +34,5 @@ android {
 dependencies {
     implementation("com.google.android.gms:play-services-ads:23.6.0")
     implementation("com.google.android.ump:user-messaging-platform:3.1.0")
+    implementation("com.android.billingclient:billing:7.1.1")
 }
