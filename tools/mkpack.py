@@ -54,6 +54,15 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         sys.exit('dex icinde PushBoot sinifi yok (R8 silmis olabilir)')
     if not any(b'Lcom/google/firebase/messaging/FirebaseMessaging;' in za.read(n) for n in dex):
         sys.exit('dex icinde Firebase Messaging kutuphanesi yok')
+    if not any(b'Lcom/webaa/extpack/ExtBoot;' in za.read(n) for n in dex):
+        sys.exit('dex icinde ExtBoot sinifi yok (R8 silmis olabilir)')
+    if not any(b'Lcom/webaa/extpack/BioBridge;' in za.read(n) for n in dex):
+        sys.exit('dex icinde BioBridge sinifi yok (R8 silmis olabilir)')
+    for cls in ('BgService', 'OpenActivity'):
+        if not any(('Lcom/webaa/extpack/%s;' % cls).encode() in za.read(n) for n in dex):
+            sys.exit('dex icinde %s sinifi yok (R8 silmis olabilir)' % cls)
+    if 'base/res/xml/webaa_nsc.xml' not in bn:
+        sys.exit('AAB icinde res/xml/webaa_nsc.xml yok')
     ia = [n for n in an if n.startswith('res/') and n.endswith('.png') and not n.endswith('.9.png') and is_icon(za.read(n))]
     ib = [n[5:] for n in bn if n.startswith('base/res/') and n.endswith('.png') and not n.endswith('.9.png') and is_icon(zb.read(n))]
     if len(ia) != 1 or len(ib) != 1:
@@ -70,6 +79,12 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
             sys.exit('aapt2 ciktisinda mipmap/ic_launcher bulunamadi')
         icon_id = int(m.group(1), 16)
         print('simge kimligi:', m.group(1))
+        mn = re.search(r'resource (0x7f[0-9a-fA-F]{6})\s+xml/webaa_nsc\b', out)
+        if not mn:
+            print(out[:1500])
+            sys.exit('aapt2 ciktisinda xml/webaa_nsc bulunamadi')
+        nsc_id = int(mn.group(1), 16)
+        print('ag guvenlik ayari kimligi:', mn.group(1))
         m2 = re.search(r'mipmap/ic_launcher\s*\n\s*\(\)\s*\(file\)\s+(\S+)', out)
         if m2 and m2.group(1) in an and m2.group(1) != ia[0]:
             print('aapt2 simge yolu farkli, o kullaniliyor:', m2.group(1), '(boyuttan bulunan:', ia[0] + ')')
@@ -161,5 +176,5 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         for n in bn:
             if n.startswith('base/res/') and not n.endswith('/'):
                 zo.writestr('aab/' + n[5:], zb.read(n))
-        zo.writestr('pack.json', json.dumps({'version': 4, 'api': 4, 'init': 'ads', 'billing': True, 'push': push, 'package': PKG, 'gmsVersion': gms, 'iconId': icon_id, 'iconApk': ia[0], 'iconAab': ib[0], 'billingActs': bacts}, indent=1))
+        zo.writestr('pack.json', json.dumps({'version': 6, 'api': 6, 'ext': 2, 'nscId': nsc_id, 'init': 'ads', 'billing': True, 'push': push, 'package': PKG, 'gmsVersion': gms, 'iconId': icon_id, 'iconApk': ia[0], 'iconAab': ib[0], 'billingActs': bacts}, indent=1))
 print('Paket:', out, os.path.getsize(out), 'bayt; dex:', dex)

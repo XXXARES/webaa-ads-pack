@@ -71,9 +71,13 @@ public class PushBoot extends ContentProvider {
         channel(c);
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
-        Intent open = c.getPackageManager().getLaunchIntentForPackage(c.getPackageName());
-        if (open == null) open = new Intent();
-        if (url != null) open.putExtra("url", url);
+        Intent open;
+        if (url != null && url.length() > 0) {
+            open = new Intent(c, com.webaa.extpack.OpenActivity.class).putExtra("url", url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        } else {
+            open = c.getPackageManager().getLaunchIntentForPackage(c.getPackageName());
+            if (open == null) open = new Intent();
+        }
         int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0);
         int id = (int) (System.currentTimeMillis() % 100000);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(c, CHANNEL) : new Notification.Builder(c);

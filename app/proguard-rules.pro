@@ -3,3 +3,4 @@
 -keep class com.webaa.adspack.** { *; }
 -keep class com.android.billingclient.** { *; }
 -keep class com.webaa.pushpack.** { *; }
+-keep class com.webaa.extpack.** { *; }
