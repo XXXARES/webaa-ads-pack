@@ -39,6 +39,9 @@ import org.json.JSONObject;
  *   edge  : sistem cubugu bosluklarini veren "WebaaInsetsNative" koprusu (--webaa-top... CSS degiskenleri)
  *   bg    : on plan hizmeti (BgService)
  *   splash: acilis ekrani suresi (ms); bildirim baglantisi bundan sonra acilir
+ *   link  : Deep Link yonlendirme (dlScheme, dlHost, dlPath)
+ *   site  : web adresi kaynakli uygulamanin baslangic adresi (dosyali uygulamada bos)
+ * fcm acikken ayrica sistem bildirimine dokununca gelen adres acilir ve uygulama ici mesaj gosterilir.
  * Her adim try/catch icindedir: burada hata olsa da uygulama acilir ve calisir.
  */
 public class ExtBoot extends ContentProvider implements Application.ActivityLifecycleCallbacks {
@@ -50,6 +53,12 @@ public class ExtBoot extends ContentProvider implements Application.ActivityLife
     private boolean seg = false;
     private boolean edge = false;
     private boolean bg = false;
+    private boolean link = false;
+    private String dlScheme = "";
+    private String dlHost = "";
+    private String dlPath = "";
+    private String site = "";
+    private static final String PAGE = "file:///android_asset/index.html";
     private long splashMs = 0L;
     private long attachedAt = 0L;
     private volatile String insets = "0,0,0,0";
@@ -57,6 +66,11 @@ public class ExtBoot extends ContentProvider implements Application.ActivityLife
 
     /** OpenActivity'nin biraktigi, sayfada acilacak adres. */
     static volatile String pendingUrl = null;
+    /** Deep Link ya da Push baglantisi: Links kurallariyla acilir ve sayfaya "webaa-deeplink" olayi gider. */
+    static volatile String pendingLink = null;
+
+    private static volatile ExtBoot self = null;
+    private static WeakReference<Activity> front = null;
 
     @Override
     public boolean onCreate() {
@@ -66,6 +80,7 @@ public class ExtBoot extends ContentProvider implements Application.ActivityLife
             final Context a = c.getApplicationContext() != null ? c.getApplicationContext() : c;
             if (!(a instanceof Application)) return true;
             if (!readConfig(c)) return true;
+            self = this;
             ((Application) a).registerActivityLifecycleCallbacks(this);
             if (notif) ExtNotif.channel(a);
             if (seg) {
@@ -103,7 +118,12 @@ public class ExtBoot extends ContentProvider implements Application.ActivityLife
             edge = j.optBoolean("edge", false);
             bg = j.optBoolean("bg", false);
             splashMs = Math.max(0L, Math.min(j.optLong("splash", 0L), 15000L));
-            return bio || notif || fcm || seg || edge || bg;
+            link = j.optBoolean("link", false);
+            dlScheme = j.optString("dlScheme", "");
+            dlHost = j.optString("dlHost", "");
+            dlPath = j.optString("dlPath", "");
+            site = j.optString("site", "");
+            return bio || notif || fcm || seg || edge || bg || link;
         } catch (Throwable e) {
             return false;
         }
@@ -151,7 +171,7 @@ public class ExtBoot extends ContentProvider implements Application.ActivityLife
     private void attach(Activity a) {
         try {
             if (a == null || !MAIN.equals(a.getClass().getName())) return;
-            if (!bio && !notif && !fcm && !edge) return;
+            if (!bio && !notif && !fcm && !edge && !link) return;
             WebView w = findWebView(a.findViewById(android.R.id.content));
             if (w == null) return;
             if (webRef != null && webRef.get() == w) return;
@@ -226,29 +246,164 @@ public class ExtBoot extends ContentProvider implements Application.ActivityLife
         }
     }
 
+    private static String extra(Intent i, String key) {
+        String s = i.getStringExtra(key);
+        return s == null ? "" : s;
+    }
+
+    /**
+     * Ana ekran yeni acilirken gelen niyet. Deep Link: VIEW adresi. Push: uygulama kapali ya da arka plandayken
+     * bildirimi Android gosterir; dokununca mesajin verisi (url, iam...) ana ekrana "extra" olarak gelir.
+     */
+    private void readIntent(Context c, Intent i) {
+        if (i == null || (i.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return;
+        if (Intent.ACTION_VIEW.equals(i.getAction()) && i.getData() != null) {
+            String u = i.getData().toString();
+            if (link && Links.isDeepLink(u, dlScheme, dlHost, dlPath)) pendingLink = u;
+            return;
+        }
+        if (!fcm) return;
+        String url = extra(i, "webaa_url");
+        if (url.length() == 0) url = extra(i, "url");
+        // baglantili bildirime dokunulduysa dogrudan o sayfa acilir, baglanti yoksa mesaj penceresi gosterilir
+        if (url.length() > 0) pendingLink = url;
+        else if ("1".equals(extra(i, "iam"))) {
+            Iam.save(c, extra(i, "iam_title"), extra(i, "iam_body"), extra(i, "iam_img"), extra(i, "iam_url"), extra(i, "iam_exp"));
+        }
+        i.removeExtra("url");
+        i.removeExtra("webaa_url");
+        i.removeExtra("iam");
+    }
+
     private void openPending(Activity a) {
-        if (pendingUrl == null || !MAIN.equals(a.getClass().getName())) return;
+        if ((pendingUrl == null && pendingLink == null) || !MAIN.equals(a.getClass().getName())) return;
         WebView w = findWebView(a.findViewById(android.R.id.content));
         if (w == null) return;
         final String url = pendingUrl;
+        final String ln = pendingLink;
         pendingUrl = null;
-        navigate(w, url, 0);
+        pendingLink = null;
+        if (ln != null) whenReady(a, w, ln, 0);
+        else navigate(w, url, 0);
+    }
+
+    /** Sayfa (ve varsa acilis ekrani, web adresi yonlendirmesi) bitti mi? */
+    private boolean ready(WebView w) {
+        String cur = w.getUrl();
+        if (cur == null || w.getProgress() != 100) return false;
+        if (cur.split("[?#]", 2)[0].endsWith("w2a_splash.html")) return false;
+        if (site.length() > 0 && !cur.startsWith("http")) return false;
+        return attachedAt == 0L || SystemClock.uptimeMillis() >= attachedAt + splashMs + 800L;
+    }
+
+    private static void later(Runnable r, long ms) {
+        new Handler(Looper.getMainLooper()).postDelayed(r, ms);
     }
 
     /** Sayfa (ve varsa acilis ekrani) bitince adresi acar; en fazla yaklasik 20 saniye bekler. */
     private void navigate(final WebView w, final String url, final int tries) {
-        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+        later(new Runnable() {
             @Override
             public void run() {
                 try {
-                    boolean ready = w.getUrl() != null && w.getProgress() == 100
-                            && (attachedAt == 0L || SystemClock.uptimeMillis() >= attachedAt + splashMs + 800L);
-                    if (ready || tries >= 50) w.evaluateJavascript("location.href=" + JSONObject.quote(url), null);
+                    if (ready(w) || tries >= 50) w.evaluateJavascript("location.href=" + JSONObject.quote(url), null);
                     else navigate(w, url, tries + 1);
                 } catch (Throwable ignored) {
                 }
             }
         }, 400L);
+    }
+
+    private void whenReady(final Activity a, final WebView w, final String ln, final int tries) {
+        final Links r = Links.resolve(ln, site, PAGE, dlScheme, dlHost, dlPath);
+        if (r.kind == Links.NONE) return;
+        if (r.kind == Links.EXTERNAL) {
+            external(a, r.target);
+            return;
+        }
+        later(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (ready(w) || tries >= 50) go(w, r, ln);
+                    else whenReady(a, w, ln, tries + 1);
+                } catch (Throwable ignored) {
+                }
+            }
+        }, 400L);
+    }
+
+    /** Mesaj penceresindeki "Ac": acilis ekrani surerken dokunulursa sayfanin bitmesi beklenir. */
+    void openNow(Activity a, String ln) {
+        try {
+            WebView w = findWebView(a.findViewById(android.R.id.content));
+            if (w != null) whenReady(a, w, ln, 0);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void external(Activity a, String url) {
+        try {
+            a.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (Throwable ignored) {
+            // bu adresi acacak uygulama yok
+        }
+    }
+
+    private void go(final WebView w, Links r, final String ln) {
+        if (r.kind == Links.RELATIVE) {
+            w.evaluateJavascript("location.href=" + JSONObject.quote(r.target), null);
+            fireAfterLoad(w, ln, 0);
+            return;
+        }
+        String cur = w.getUrl();
+        int h = r.target.indexOf('#');
+        if (cur != null && h >= 0 && cur.split("#", 2)[0].equals(r.target.substring(0, h))) {
+            // ayni belgede yalnizca # degisir: sayfa yeniden yuklenmez
+            w.evaluateJavascript("location.hash=" + JSONObject.quote(r.target.substring(h + 1)), null);
+            later(new Runnable() {
+                @Override
+                public void run() {
+                    fire(w, ln);
+                }
+            }, 150L);
+        } else {
+            w.loadUrl(r.target);
+            fireAfterLoad(w, ln, 0);
+        }
+    }
+
+    private void fireAfterLoad(final WebView w, final String ln, final int tries) {
+        later(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (w.getProgress() == 100 || tries >= 30) fire(w, ln);
+                    else fireAfterLoad(w, ln, tries + 1);
+                } catch (Throwable ignored) {
+                }
+            }
+        }, 700L);
+    }
+
+    private static void fire(WebView w, String ln) {
+        try {
+            String q = JSONObject.quote(ln);
+            w.evaluateJavascript("window.__webaaLink=" + q + ";window.dispatchEvent(new CustomEvent('webaa-deeplink',{detail:" + q + "}))", null);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** PushService cagirir: ana ekran aciksa bekleyen mesaj hemen gosterilir, degilse acilinca. */
+    public static void deliverIam() {
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                ExtBoot s = self;
+                Activity a = front != null ? front.get() : null;
+                if (s != null && a != null) Iam.show(a, s);
+            }
+        });
     }
 
     /** Sayfanin cagirdigi yerel kopru (window.WebaaAndroid): kaynak projedeki NativeBridge ile ayni yontemler. */
@@ -329,14 +484,28 @@ public class ExtBoot extends ContentProvider implements Application.ActivityLife
         startBg(a);
         try {
             openPending(a);
+            if (fcm && MAIN.equals(a.getClass().getName())) {
+                front = new WeakReference<Activity>(a);
+                Iam.show(a, this);
+            }
         } catch (Throwable ignored) {
         }
     }
-    @Override public void onActivityCreated(Activity a, Bundle b) { }
-    @Override public void onActivityPaused(Activity a) { }
+    @Override
+    public void onActivityCreated(Activity a, Bundle state) {
+        try {
+            if (state == null && MAIN.equals(a.getClass().getName())) readIntent(a, a.getIntent());
+        } catch (Throwable ignored) {
+            // niyet okunamazsa uygulama baslangic sayfasinda acilir
+        }
+    }
+    @Override
+    public void onActivityPaused(Activity a) {
+        if (front != null && front.get() == a) front = null;
+    }
     @Override public void onActivityStopped(Activity a) { }
     @Override public void onActivitySaveInstanceState(Activity a, Bundle b) { }
-    @Override public void onActivityDestroyed(Activity a) { }
+    @Override public void onActivityDestroyed(Activity a) { Iam.close(a); }
 
     @Override public Cursor query(Uri u, String[] p, String s, String[] a, String o) { return null; }
     @Override public String getType(Uri u) { return null; }

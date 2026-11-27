@@ -9,6 +9,7 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -67,13 +68,13 @@ public class PushBoot extends ContentProvider {
         if (nm != null) nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Bildirimler", NotificationManager.IMPORTANCE_DEFAULT));
     }
 
-    static void show(Context c, String title, String body, String url) {
+    static void show(Context c, String title, String body, String url, Bitmap picture) {
         channel(c);
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
         Intent open;
         if (url != null && url.length() > 0) {
-            open = new Intent(c, com.webaa.extpack.OpenActivity.class).putExtra("url", url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            open = new Intent(c, com.webaa.extpack.OpenActivity.class).putExtra("url", url).putExtra("push", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         } else {
             open = c.getPackageManager().getLaunchIntentForPackage(c.getPackageName());
             if (open == null) open = new Intent();
@@ -87,6 +88,10 @@ public class PushBoot extends ContentProvider {
                 .setStyle(new Notification.BigTextStyle().bigText(body != null ? body : ""))
                 .setAutoCancel(true)
                 .setContentIntent(PendingIntent.getActivity(c, id, open, flags));
+        if (picture != null) {
+            b.setLargeIcon(picture)
+                    .setStyle(new Notification.BigPictureStyle().bigPicture(picture).setSummaryText(body != null ? body : ""));
+        }
         nm.notify(id, b.build());
     }
 

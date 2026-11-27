@@ -11,7 +11,9 @@ public class OpenActivity extends Activity {
         super.onCreate(state);
         try {
             String u = getIntent() != null ? getIntent().getStringExtra("url") : null;
-            if (safe(u)) ExtBoot.pendingUrl = u.trim();
+            // Push baglantisi, bildirime kapaliyken dokunulmus gibi ayni kurallarla acilir (Links)
+            if (u != null && getIntent().getBooleanExtra("push", false)) ExtBoot.pendingLink = u;
+            else if (safe(u)) ExtBoot.pendingUrl = u.trim();
             Intent i = getPackageManager().getLaunchIntentForPackage(getPackageName());
             if (i != null) startActivity(i);
         } catch (Throwable ignored) {

@@ -58,7 +58,7 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         sys.exit('dex icinde ExtBoot sinifi yok (R8 silmis olabilir)')
     if not any(b'Lcom/webaa/extpack/BioBridge;' in za.read(n) for n in dex):
         sys.exit('dex icinde BioBridge sinifi yok (R8 silmis olabilir)')
-    for cls in ('BgService', 'OpenActivity'):
+    for cls in ('BgService', 'OpenActivity', 'Links', 'Iam'):
         if not any(('Lcom/webaa/extpack/%s;' % cls).encode() in za.read(n) for n in dex):
             sys.exit('dex icinde %s sinifi yok (R8 silmis olabilir)' % cls)
     if 'base/res/xml/webaa_nsc.xml' not in bn:
@@ -176,5 +176,5 @@ with zipfile.ZipFile(apk) as za, zipfile.ZipFile(aab) as zb:
         for n in bn:
             if n.startswith('base/res/') and not n.endswith('/'):
                 zo.writestr('aab/' + n[5:], zb.read(n))
-        zo.writestr('pack.json', json.dumps({'version': 6, 'api': 6, 'ext': 2, 'nscId': nsc_id, 'init': 'ads', 'billing': True, 'push': push, 'package': PKG, 'gmsVersion': gms, 'iconId': icon_id, 'iconApk': ia[0], 'iconAab': ib[0], 'billingActs': bacts}, indent=1))
+        zo.writestr('pack.json', json.dumps({'version': 7, 'api': 7, 'ext': 3, 'nscId': nsc_id, 'init': 'ads', 'billing': True, 'push': push, 'package': PKG, 'gmsVersion': gms, 'iconId': icon_id, 'iconApk': ia[0], 'iconAab': ib[0], 'billingActs': bacts}, indent=1))
 print('Paket:', out, os.path.getsize(out), 'bayt; dex:', dex)
